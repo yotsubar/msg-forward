@@ -50,6 +50,7 @@ func main() {
 		if err != nil {
 			return
 		}
+		s.AddClient(socket, r)
 		go func() {
 			socket.ReadLoop()
 		}()

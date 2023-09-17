@@ -25,6 +25,7 @@ type Client struct {
 	pinger    *time.Ticker
 	pongCount *int64
 	ws        *gws.Conn
+	ip        string
 }
 
 func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
@@ -48,15 +49,16 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) OnOpen(ws *gws.Conn) {
-	client := s.AddClient(ws)
-	log.Printf("Client connected: %s. Total connected: %d", ws.RemoteAddr(), len(s.Clients))
+	client := s.Clients[ws]
+	log.Printf("Client connected: %s. Total connected: %d", client.ip, len(s.Clients))
 	s.Pinger(client)
 }
 
 func (s *Server) OnClose(socket *gws.Conn, err error) {
-	s.Clients[socket].pinger.Stop()
+	c := s.Clients[socket]
+	c.pinger.Stop()
 	s.RemoveClient(socket)
-	log.Printf("Client disconnected: %s. Total connected: %d\n", socket.RemoteAddr(), len(s.Clients))
+	log.Printf("Client disconnected: %s. Total connected: %d\n", c.ip, len(s.Clients))
 }
 
 func (s *Server) OnPing(socket *gws.Conn, payload []byte) {
@@ -81,8 +83,11 @@ func (s *Server) Auth(r *http.Request) bool {
 	return s.wspath != "" && strings.HasSuffix(r.URL.Path, s.wspath)
 }
 
-func (s *Server) AddClient(ws *gws.Conn) *Client {
-	client := &Client{ws: ws}
+func (s *Server) AddClient(ws *gws.Conn, r *http.Request) *Client {
+	client := &Client{
+		ws: ws,
+		ip: FindActualRemoteIp(r),
+	}
 	s.Clients[ws] = client
 	return client
 }
@@ -100,7 +105,7 @@ func (s *Server) Pinger(client *Client) {
 	go func() {
 		for range client.pinger.C {
 			if atomic.LoadInt64(&pongCount) == 0 {
-				log.Printf("Client %s did not respond to ping in time", client.ws.RemoteAddr())
+				log.Printf("Client %s did not respond to ping in time", client.ip)
 				client.ws.WriteClose(1000, nil)
 				return
 			}
@@ -141,4 +146,16 @@ func randomString(n int) string {
 func sendMsg(ws *gws.Conn, data []byte) error {
 	err := ws.WriteAsync(gws.OpcodeBinary, data)
 	return err
+}
+
+func FindActualRemoteIp(r *http.Request) string {
+	ip := r.Header.Get("X-Real-IP")
+	if ip != "" {
+		return ip
+	}
+	ip = r.Header.Get("X-Forwarded-For")
+	if ip != "" {
+		return ip
+	}
+	return r.RemoteAddr
 }
