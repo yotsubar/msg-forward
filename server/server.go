@@ -71,11 +71,35 @@ func (s *Server) OnPong(socket *gws.Conn, payload []byte) {
 
 func (s *Server) OnMessage(socket *gws.Conn, message *gws.Message) {
 	bytes := message.Bytes()
-	if bytes[0] == byte(PONG) {
+	switch MessageType(bytes[0]) {
+	case PONG:
 		atomic.AddInt64(s.Clients[socket].pongCount, 1)
-	} else if bytes[0] == byte(MSG) {
+	case MSG:
+		b := gws.NewBroadcaster(gws.OpcodeBinary, bytes)
+		defer b.Release()
 		for c := range s.Clients {
-			c.WriteAsync(gws.OpcodeBinary, message.Bytes())
+			b.Broadcast(c)
+		}
+	case ASK_SYNC:
+		b := gws.NewBroadcaster(gws.OpcodeBinary, bytes)
+		defer b.Release()
+		i := 2 // ask 2 of others for a sync
+		for c := range s.Clients {
+			if c != socket {
+				b.Broadcast(c)
+				i--
+			}
+			if i == 0 {
+				break
+			}
+		}
+	case SYNC_ANSWER:
+		b := gws.NewBroadcaster(gws.OpcodeBinary, bytes)
+		defer b.Release()
+		for c := range s.Clients {
+			if c != socket { // only notify others
+				b.Broadcast(c)
+			}
 		}
 	}
 }
@@ -124,6 +148,8 @@ const (
 	PING
 	PONG
 	MSG
+	ASK_SYNC
+	SYNC_ANSWER
 )
 
 type Config struct {
