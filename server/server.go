@@ -93,6 +93,10 @@ func (s *Server) OnMessage(socket *gws.Conn, message *gws.Message) {
 				break
 			}
 		}
+		if i == 2 {
+			//no others
+			sendMsg(socket, []byte{byte(NO_SYNC_ANSWER)})
+		}
 	case SYNC_ANSWER:
 		b := gws.NewBroadcaster(gws.OpcodeBinary, bytes)
 		defer b.Release()
@@ -150,6 +154,7 @@ const (
 	MSG
 	ASK_SYNC
 	SYNC_ANSWER
+	NO_SYNC_ANSWER
 )
 
 type Config struct {
