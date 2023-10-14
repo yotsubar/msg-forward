@@ -58,22 +58,20 @@ func (s *Server) OnClose(socket *gws.Conn, err error) {
 	c := s.Clients[socket]
 	c.pinger.Stop()
 	s.RemoveClient(socket)
-	log.Printf("Client disconnected: %s. Total connected: %d\n", c.ip, len(s.Clients))
+	log.Printf("Client disconnected: %s. Total connected: %d, %s\n", c.ip, len(s.Clients), err)
 }
 
 func (s *Server) OnPing(socket *gws.Conn, payload []byte) {
-
+	socket.WritePong(payload)
 }
 
 func (s *Server) OnPong(socket *gws.Conn, payload []byte) {
-	socket.WritePong(payload)
+	atomic.AddInt64(s.Clients[socket].pongCount, 1)
 }
 
 func (s *Server) OnMessage(socket *gws.Conn, message *gws.Message) {
 	bytes := message.Bytes()
 	switch MessageType(bytes[0]) {
-	case PONG:
-		atomic.AddInt64(s.Clients[socket].pongCount, 1)
 	case MSG:
 		b := gws.NewBroadcaster(gws.OpcodeBinary, bytes)
 		defer b.Release()
@@ -138,7 +136,7 @@ func (s *Server) Pinger(client *Client) {
 				return
 			}
 
-			sendMsg(client.ws, []byte{byte(PING)})
+			client.ws.WritePing([]byte{})
 			atomic.StoreInt64(&pongCount, 0)
 		}
 	}()
@@ -149,8 +147,6 @@ type MessageType byte
 const (
 	Error MessageType = iota
 	OK
-	PING
-	PONG
 	MSG
 	ASK_SYNC
 	SYNC_ANSWER
